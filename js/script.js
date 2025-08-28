@@ -809,7 +809,7 @@ jQuery.extend(ReportCreator.prototype, {
 
             function loadPage() {
                 var requestData = {
-                    filter: filter,
+                    //filter: filter,
                     page: page,
                     on_page: 100,
                 };
