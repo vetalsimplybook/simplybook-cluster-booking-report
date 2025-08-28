@@ -1,0 +1,254 @@
+/* Custom styles for SimplyBook cluster booking report */
+.form-signin,
+.form-companies {
+  max-width: 450px;
+  padding: 2rem;
+  margin: 3rem auto;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+.form-companies {
+  max-width: 700px;
+}
+.form-signin-wide {
+  max-width: 800px;
+  padding: 2rem;
+  margin: 3rem auto;
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+}
+.header--logo-image {
+  display: block;
+  margin: 0 auto 2rem;
+}
+.form-floating {
+  position: relative;
+}
+.form-floating > .form-control,
+.form-floating > .form-select {
+  border-radius: 8px;
+  border: 2px solid #e1e5e9;
+  transition: all 0.3s ease;
+}
+.form-floating > .form-control:focus,
+.form-floating > .form-select:focus {
+  border-color: #2eabe2;
+  box-shadow: 0 0 0 0.2rem rgba(46, 171, 226, 0.25);
+}
+.btn {
+  border-radius: 8px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+.btn.btn-primary {
+  background-color: #2eabe2;
+  border-color: #2eabe2;
+  font-size: 1.1rem;
+  padding: 0.75rem 1.5rem;
+}
+.btn.btn-primary:hover {
+  background-color: #238bb8;
+  border-color: #238bb8;
+}
+.btn.btn-secondary {
+  background-color: #6c757d;
+  border-color: #6c757d;
+  font-size: 0.9rem;
+}
+.btn.btn-secondary:hover {
+  background-color: #545b62;
+  border-color: #545b62;
+}
+.btn.btn-demo {
+  background-color: transparent;
+  border: 1px dashed #e1e5e9;
+  color: #6c757d;
+  font-size: 0.85rem;
+  padding: 0.5rem 1rem;
+}
+.btn.btn-demo:hover {
+  background-color: #f8f9fa;
+  border-color: #6c757d;
+}
+#domain_custom_container {
+  animation: fadeIn 0.3s ease-in-out;
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.alert {
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+.spinner-border {
+  width: 1rem;
+  height: 1rem;
+  margin-right: 0.5rem;
+}
+/* Progress indicator */
+.progress-indicator {
+  margin-bottom: 2rem;
+}
+.progress-step {
+  display: inline-block;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: #e1e5e9;
+  color: #6c757d;
+  text-align: center;
+  line-height: 30px;
+  margin-right: 1rem;
+  font-weight: bold;
+  transition: all 0.3s ease;
+}
+.progress-step.active {
+  background-color: #2eabe2;
+  color: white;
+}
+.progress-step.completed {
+  background-color: #28a745;
+  color: white;
+}
+/* Step visibility */
+.step {
+  display: none;
+}
+.step.active {
+  display: block;
+  animation: slideIn 0.5s ease-in-out;
+}
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+/* Report filters */
+.report-filters {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 1.5rem;
+  border: 1px solid #e1e5e9;
+}
+.report-filters h5 {
+  color: #333;
+  margin-bottom: 1rem;
+}
+/* Companies selection styles */
+.companies-list {
+  max-height: 450px;
+  overflow-y: auto;
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  padding: 1rem;
+}
+.companies-list .form-check {
+  padding: 0.75rem 1rem;
+  margin: 0 0 0.5rem 0;
+  border-radius: 6px;
+  transition: background-color 0.2s ease;
+  border: 1px solid transparent;
+}
+.companies-list .form-check:hover {
+  background-color: #f8f9fa;
+  border-color: #e9ecef;
+}
+.companies-list .form-check:last-child {
+  margin-bottom: 0;
+}
+.companies-list .form-check .form-check-input {
+  margin-top: 0.1rem;
+  margin-right: 0.75rem;
+  float: none;
+  left: auto;
+  margin-left: 0px;
+}
+.companies-list .form-check .form-check-input:checked {
+  background-color: #2eabe2;
+  border-color: #2eabe2;
+}
+.companies-list .form-check .form-check-label {
+  font-weight: 500;
+  cursor: pointer;
+  flex-grow: 1;
+  width: 100%;
+}
+.company-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+.company-item .company-info {
+  flex-grow: 1;
+}
+.company-item .company-info .company-name {
+  font-weight: 600;
+  color: #333;
+  font-size: 1rem;
+}
+.company-item .company-info .company-details {
+  font-size: 0.85rem;
+  color: #6c757d;
+  margin-top: 0.25rem;
+}
+.company-item .company-stats {
+  font-size: 0.75rem;
+  color: #6c757d;
+  text-align: right;
+  margin-left: 1rem;
+  flex-shrink: 0;
+}
+.company-item .company-stats .stat-item {
+  display: block;
+  white-space: nowrap;
+}
+#selected-count {
+  min-width: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Responsive adjustments */
+@media (max-width: 576px) {
+  .form-signin,
+  .form-signin-wide {
+    margin: 1rem;
+    padding: 1.5rem;
+    max-width: none;
+  }
+  .report-filters {
+    padding: 1rem;
+  }
+  .companies-list {
+    padding: 0.5rem;
+  }
+  .company-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .company-item .company-stats {
+    margin-left: 0;
+    margin-top: 0.5rem;
+    text-align: left;
+  }
+}
+/*# sourceMappingURL=style.css.map */
