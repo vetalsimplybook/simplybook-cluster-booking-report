@@ -821,6 +821,7 @@ jQuery.extend(ReportCreator.prototype, {
                     requestData.date_to = reportParams.dateTo;
                 }
 
+
                 $.ajax({
                     url: self.getUserApiUrl() + '/admin/bookings',
                     method: 'GET',
