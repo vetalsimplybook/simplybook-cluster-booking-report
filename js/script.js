@@ -811,8 +811,15 @@ jQuery.extend(ReportCreator.prototype, {
                 var requestData = {
                     filter: filter,
                     page: page,
-                    on_page: 100
+                    on_page: 100,
                 };
+
+                if (reportParams.dateFrom) {
+                    requestData.date_from = reportParams.dateFrom;
+                }
+                if (reportParams.dateTo) {
+                    requestData.date_to = reportParams.dateTo;
+                }
 
                 $.ajax({
                     url: self.getUserApiUrl() + '/admin/bookings',
