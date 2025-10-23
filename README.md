@@ -6,7 +6,7 @@ A web-based tool for generating comprehensive booking reports across multiple co
 
 - **Cluster Authentication**: Secure connection to SimplyBook clusters using API keys
 - **Multi-Company Selection**: Select multiple companies from your cluster for unified reporting
-- **Advanced Filtering**: Filter bookings by date range and status
+- **Advanced Filtering**: Filter bookings by booking date range, created date range, and status
 - **Comprehensive Data Export**: Exports over 75 fields including booking details, client information, service data, and provider information
 - **Pagination Support**: Automatically handles large datasets across multiple pages
 - **Real-time Progress**: Live progress tracking during report generation
@@ -33,8 +33,8 @@ A web-based tool for generating comprehensive booking reports across multiple co
 1. Select companies from your cluster that you want to include in the report
 2. Use "Select All" to quickly select all companies
 3. Configure report parameters:
-   - **Date From**: Start date for booking data (optional)
-   - **Date To**: End date for booking data (optional)
+   - **Booking Date From / To**: Range applied to booking start time (optional)
+   - **Created Date From / To**: Range applied to when booking was created (optional)
    - **Booking Status**: Filter by specific status or leave empty for all statuses
 4. Click "Generate Report"
 
@@ -88,6 +88,61 @@ The generated CSV report includes comprehensive booking information:
 - Valid SimplyBook Cluster API Key
 - Access to SimplyBook Cluster API
 - Appropriate permissions for the companies you want to report on
+
+## API Endpoint Change
+
+The application now uses the `/admin/detailed-report` endpoint on `user-api-v2.{domain}` with a two-step process:
+
+### Step 1: Create Report (POST)
+POST request creates a report generation task and returns a report ID:
+
+```bash
+curl -X POST \
+  "https://user-api-v2.test.simplybook.ovh/admin/detailed-report" \
+  -H "accept: application/json" \
+  -H "X-Company-Login: YOUR_COMPANY_LOGIN" \
+  -H "X-Token: YOUR_COMPANY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "order_direction": "asc",
+        "order_field": "created_datetime",
+        "filter": {
+            "created_date_from": "2025-01-01",
+            "created_date_to": "2025-01-31",
+            "date_from": "2025-01-01",
+            "date_to": "2025-01-31"
+        }
+     }'
+
+# Response: {"id": "8"}
+```
+
+### Step 2: Retrieve Report Results (GET)
+GET request polls the report status and retrieves data when ready:
+
+```bash
+curl -X GET \
+  "https://user-api-v2.test.simplybook.ovh/admin/detailed-report/:id" \
+  -H "accept: application/json" \
+  -H "X-Company-Login: YOUR_COMPANY_LOGIN" \
+  -H "X-Token: YOUR_COMPANY_TOKEN"
+
+# Response: [...]
+```
+
+The application automatically:
+- Creates the report via POST
+- Polls the GET endpoint every 5 seconds
+- Retrieves the data when the report is ready
+- Displays progress during generation
+
+## Additional Filters
+
+Supported filter keys used by this tool:
+- `date_from`, `date_to` (booking start datetime range)
+- `created_date_from`, `created_date_to` (booking creation datetime range)
+- `status` (booking status)
+- Potential extras (`event_id`, `unit_group_id`, `client_id`, `booking_type`, `code`) can be added if UI is expanded.
 
 ## Browser Compatibility
 

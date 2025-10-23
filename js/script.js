@@ -143,15 +143,23 @@ jQuery.extend(ReportCreator.prototype, {
         var lastMonth = new Date();
         lastMonth.setMonth(today.getMonth() - 12);
 
-        // Format dates for input fields (YYYY-MM-DD)
         var formatDate = function(date) {
             return date.getFullYear() + '-' +
                    String(date.getMonth() + 1).padStart(2, '0') + '-' +
                    String(date.getDate()).padStart(2, '0');
         };
 
-        $('#date_from').val(formatDate(lastMonth));
-        $('#date_to').val(formatDate(today));
+        // Don't set default values for booking dates (date_from, date_to)
+        // $('#date_from').val(formatDate(lastMonth));
+        // $('#date_to').val(formatDate(today));
+
+        // Initialize created date filters if fields exist (optional UI inputs)
+        if ($('#created_date_from').length) {
+            $('#created_date_from').val(formatDate(lastMonth));
+        }
+        if ($('#created_date_to').length) {
+            $('#created_date_to').val(formatDate(today));
+        }
     },
 
     fillDemoCredentials: function() {
@@ -540,23 +548,30 @@ jQuery.extend(ReportCreator.prototype, {
             return;
         }
 
-        // Get report parameters
         var reportParams = {
             companies: this.selectedCompanies,
             dateFrom: $('#date_from').val(),
             dateTo: $('#date_to').val(),
-            bookingStatus: $('#booking_status').val()
+            bookingStatus: $('#booking_status').val(),
+            // New optional created date filters (fallback to booking dates if not provided)
+            createdDateFrom: $('#created_date_from').length ? $('#created_date_from').val() : $('#date_from').val(),
+            createdDateTo: $('#created_date_to').length ? $('#created_date_to').val() : $('#date_to').val()
         };
 
-        // Validate date range
         if (reportParams.dateFrom && reportParams.dateTo) {
             if (new Date(reportParams.dateFrom) > new Date(reportParams.dateTo)) {
                 this.showMessage('Date "From" cannot be later than date "To"', 'error');
                 return;
             }
         }
+        // Created date range validation
+        if (reportParams.createdDateFrom && reportParams.createdDateTo) {
+            if (new Date(reportParams.createdDateFrom) > new Date(reportParams.createdDateTo)) {
+                this.showMessage('Created Date "From" cannot be later than Created Date "To"', 'error');
+                return;
+            }
+        }
 
-        // Hide current step and show step 3
         $('.step-2').removeClass('active');
         $('.step-3').addClass('active');
 
@@ -746,6 +761,9 @@ jQuery.extend(ReportCreator.prototype, {
                 return;
             }
 
+            // Update status to show report is being generated
+            self.updateCompanyStatus(companyLogin, 'bookings-generating', 'Generating report...');
+
             var promise = self.getCompanyBookings(companyLogin, reportParams)
                 .then(function(bookingsData) {
                     completedCompanies++;
@@ -789,65 +807,131 @@ jQuery.extend(ReportCreator.prototype, {
 
         return new Promise(function(resolve, reject) {
             var filter = {};
-
-            // Add status filter if specified
             if (reportParams.bookingStatus) {
                 filter.status = reportParams.bookingStatus;
             }
-
-            // Add date filters if specified
             if (reportParams.dateFrom) {
                 filter.date_from = reportParams.dateFrom;
             }
             if (reportParams.dateTo) {
                 filter.date_to = reportParams.dateTo;
             }
+            // Added created date filters
+            if (reportParams.createdDateFrom) {
+                filter.created_date_from = reportParams.createdDateFrom;
+            }
+            if (reportParams.createdDateTo) {
+                filter.created_date_to = reportParams.createdDateTo;
+            }
 
-            var allBookings = [];
-            var page = 1;
-            var totalCount = 0;
+            var requestData = {
+                filter: filter,
+                order_field: 'created_datetime',
+                order_direction: 'asc'
+            };
 
-            function loadPage() {
-                var requestData = {
-                    filter: filter,
-                    page: page,
-                    on_page: 100,
-                };
+            // Step 1: Create report (POST request)
+            $.ajax({
+                url: self.getUserApiUrl() + '/admin/detailed-report',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Token': self.companyTokens[companyLogin],
+                    'X-Company-Login': companyLogin
+                },
+                data: JSON.stringify(requestData),
+                processData: false,
+                success: function(response) {
+                    if (response && response.id) {
+                        var reportId = response.id;
+                        console.log('Report created for ' + companyLogin + ' with ID: ' + reportId);
 
+                        // Step 2: Poll for report completion
+                        self.pollReportStatus(companyLogin, reportId, resolve, reject);
+                    } else {
+                        reject(new Error('Invalid report creation response'));
+                    }
+                },
+                error: function(xhr, status, error) {
+                    self.handleApiError(xhr, 'getCompanyBookings');
 
-                $.ajax({
-                    url: self.getUserApiUrl() + '/admin/bookings',
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Token': self.companyTokens[companyLogin],
-                        'X-Company-Login': companyLogin
-                    },
-                    data: requestData,
-                    success: function(response) {
-                        if (response && response.data) {
-                            allBookings = allBookings.concat(response.data);
-                            totalCount = response.metadata ? response.metadata.items_count : response.data.length;
+                    var errorMessage = 'Failed to create report';
+                    try {
+                        var response = JSON.parse(xhr.responseText);
+                        errorMessage = response.error || response.message || errorMessage;
+                    } catch (e) {
+                        errorMessage = error || errorMessage;
+                    }
+                    reject(new Error(errorMessage));
+                }
+            });
+        });
+    },
 
-                            // Check if there are more pages
-                            if (response.metadata && page < response.metadata.pages_count) {
-                                page++;
-                                loadPage(); // Load next page
-                            } else {
-                                // All pages loaded
-                                resolve({
-                                    bookings: allBookings,
-                                    totalCount: totalCount
-                                });
-                            }
-                        } else {
-                            reject(new Error('Invalid bookings response'));
-                        }
-                    },
-                    error: function(xhr, status, error) {
-                        self.handleApiError(xhr, 'getCompanyBookings');
+    pollReportStatus: function(companyLogin, reportId, resolve, reject) {
+        var self = this;
+        var maxAttempts = 60; // Max 60 attempts (5 minutes with 5 second intervals)
+        var attemptCount = 0;
+        var pollInterval = 5000; // 5 seconds
 
-                        var errorMessage = 'Failed to get bookings';
+        function checkStatus() {
+            attemptCount++;
+
+            $.ajax({
+                url: self.getUserApiUrl() + '/admin/detailed-report/' + reportId,
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Token': self.companyTokens[companyLogin],
+                    'X-Company-Login': companyLogin,
+                },
+                success: function(response) {
+                    // Check if response is ready
+                    var isReady = false;
+                    var allBookings = [];
+                    var totalCount = 0;
+
+                    if (Array.isArray(response)) {
+                        // Response is array directly - report is ready
+                        isReady = true;
+                        allBookings = response;
+                        totalCount = response.length;
+                    } else if (response && response.data && Array.isArray(response.data)) {
+                        // Response wrapped in {data: [...]} - report is ready
+                        isReady = true;
+                        allBookings = response.data;
+                        totalCount = response.metadata ? response.metadata.items_count : response.data.length;
+                    } else if (response && response.code === 404) {
+                        // Still processing (returns {code: 404, message: "...processing"})
+                        isReady = false;
+                    }
+
+                    if (isReady) {
+                        console.log('Report ' + reportId + ' completed for ' + companyLogin + ' with ' + allBookings.length + ' bookings');
+                        resolve({
+                            bookings: allBookings,
+                            totalCount: totalCount
+                        });
+                    } else if (attemptCount >= maxAttempts) {
+                        // Timeout
+                        reject(new Error('Report generation timeout'));
+                    } else {
+                        // Report not ready yet, poll again
+                        console.log('Report ' + reportId + ' processing, attempt ' + attemptCount + '/' + maxAttempts);
+                        setTimeout(checkStatus, pollInterval);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    // If 404 or processing status, continue polling
+                    if (xhr.status === 404 && attemptCount < maxAttempts) {
+                        console.log('Report ' + reportId + ' processing, attempt ' + attemptCount + '/' + maxAttempts);
+                        setTimeout(checkStatus, pollInterval);
+                    } else if (attemptCount >= maxAttempts) {
+                        reject(new Error('Report generation timeout'));
+                    } else {
+                        self.handleApiError(xhr, 'pollReportStatus');
+
+                        var errorMessage = 'Failed to get report';
                         try {
                             var response = JSON.parse(xhr.responseText);
                             errorMessage = response.error || response.message || errorMessage;
@@ -856,11 +940,12 @@ jQuery.extend(ReportCreator.prototype, {
                         }
                         reject(new Error(errorMessage));
                     }
-                });
-            }
+                }
+            });
+        }
 
-            loadPage(); // Start loading from first page
-        });
+        // Start polling
+        checkStatus();
     },
 
     getUserApiUrl: function() {
@@ -884,6 +969,10 @@ jQuery.extend(ReportCreator.prototype, {
             case 'token-error':
                 statusClass = 'text-danger';
                 icon = 'fas fa-times';
+                break;
+            case 'bookings-generating':
+                statusClass = 'text-info';
+                icon = 'fas fa-spinner fa-spin';
                 break;
             case 'bookings-success':
                 statusClass = 'text-success';
