@@ -1064,177 +1064,113 @@ jQuery.extend(ReportCreator.prototype, {
     },
 
     generateCSV: function() {
-        // Updated CSV header with all requested fields
-        var csvContent = 'Company,Booking ID,Code,Client Name,Client Email,Client Phone,Client Address,Service Name,Provider Name,Location Name,Start DateTime,End DateTime,Duration,Status,Invoice Number,Invoice Status,Category,Ticket Code,Amount,Currency,Attribute,Canceled By,Canceled By Admin,Cancellation Time,Cancellation Type,Comment,Created By,Created By Admin,Database,Date Start,Event Name,Is Cancelled,Number of Changes,Payment System,Price,Promocodes,Record Date,Time,Unit Name,Membership ID,Invoice Payment Received,Invoice DateTime,Invoice Payment Processor,Ticket Validation DateTime,Ticket Is Used,Testing Status,User Status ID,Category ID,Location ID,Service ID,Provider ID,Client ID,Client Timezone,Client Time Offset,Batch ID,Batch Type,Is Confirmed,Can Be Edited,Can Be Canceled,Client Country,Client State,Client Full Address,Client Is Deleted,Client Email Promo Subscribed,Client SMS Promo Subscribed,Service Description,Service Price,Service Currency,Service Deposit Price,Service Tax ID,Service Tax,Service Buffer Time After,Service Picture,Service Memberships,Service Is Active,Service Is Visible,Service Duration Type,Service Limit Booking,Service Min Group Booking,Provider QTY,Provider Email,Provider Description,Provider Phone,Provider Picture,Provider Color,Provider Is Active,Provider Is Visible,Provider Services\n';
+        var self = this;
+        var csvRows = [];
+        var headers = [];
+        var headersSet = false;
 
+        // Helper function to safely escape CSV values
+        var escapeCSV = function(value) {
+            if (value === null || value === undefined) return '';
+            var stringValue = String(value);
+            if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+                return '"' + stringValue.replace(/"/g, '""') + '"';
+            }
+            return stringValue;
+        };
+
+        // Helper to flatten nested objects
+        var flattenObject = function(obj, prefix) {
+            var result = {};
+            prefix = prefix || '';
+
+            for (var key in obj) {
+                if (obj.hasOwnProperty(key)) {
+                    var value = obj[key];
+                    var newKey = prefix ? prefix + '_' + key : key;
+
+                    if (value === null || value === undefined) {
+                        result[newKey] = '';
+                    } else if (typeof value === 'object' && !Array.isArray(value)) {
+                        // Recursively flatten nested objects
+                        var flattened = flattenObject(value, newKey);
+                        for (var subKey in flattened) {
+                            result[subKey] = flattened[subKey];
+                        }
+                    } else if (Array.isArray(value)) {
+                        // Join arrays with semicolon
+                        result[newKey] = value.join('; ');
+                    } else if (typeof value === 'boolean') {
+                        result[newKey] = value ? 'Yes' : 'No';
+                    } else {
+                        result[newKey] = value;
+                    }
+                }
+            }
+
+            return result;
+        };
+
+        // Process all bookings
         this.reportData.companies.forEach(function(companyData) {
             companyData.bookings.forEach(function(booking) {
-                // Extract client data
-                var clientName = booking.client ? booking.client.name || '' : '';
-                var clientEmail = booking.client ? booking.client.email || '' : '';
-                var clientPhone = booking.client ? booking.client.phone || '' : '';
-                var clientAddress1 = booking.client ? booking.client.address1 || '' : '';
-                var clientAddress2 = booking.client ? booking.client.address2 || '' : '';
-                var clientCity = booking.client ? booking.client.city || '' : '';
-                var clientZip = booking.client ? booking.client.zip || '' : '';
-                var clientAddress = [clientAddress1, clientAddress2, clientCity, clientZip].filter(Boolean).join(', ');
-                var clientCountry = booking.client ? booking.client.country_id || '' : '';
-                var clientState = booking.client ? booking.client.state_id || '' : '';
-                var clientFullAddress = booking.client ? booking.client.full_address || '' : '';
-                var clientIsDeleted = booking.client ? (booking.client.is_deleted ? 'Yes' : 'No') : '';
-                var clientEmailPromo = booking.client ? (booking.client.email_promo_subscribed ? 'Yes' : 'No') : '';
-                var clientSmsPromo = booking.client ? (booking.client.sms_promo_subscribed ? 'Yes' : 'No') : '';
-
-                // Extract service data
-                var serviceName = booking.service ? booking.service.name || '' : '';
-                var serviceDescription = booking.service ? booking.service.description || '' : '';
-                var servicePrice = booking.service ? booking.service.price || '' : '';
-                var serviceCurrency = booking.service ? booking.service.currency || '' : '';
-                var serviceDepositPrice = booking.service ? booking.service.deposit_price || '' : '';
-                var serviceTaxId = booking.service ? booking.service.tax_id || '' : '';
-                var serviceTax = booking.service ? booking.service.tax || '' : '';
-                var serviceBufferTime = booking.service ? booking.service.buffer_time_after || '' : '';
-                var servicePicture = booking.service ? booking.service.picture || '' : '';
-                var serviceMemberships = booking.service && booking.service.memberships ? booking.service.memberships.join(';') : '';
-                var serviceIsActive = booking.service ? (booking.service.is_active ? 'Yes' : 'No') : '';
-                var serviceIsVisible = booking.service ? (booking.service.is_visible ? 'Yes' : 'No') : '';
-                var serviceDurationType = booking.service ? booking.service.duration_type || '' : '';
-                var serviceLimitBooking = booking.service ? booking.service.limit_booking || '' : '';
-                var serviceMinGroupBooking = booking.service ? booking.service.min_group_booking || '' : '';
-
-                // Extract provider data
-                var providerName = booking.provider ? booking.provider.name || '' : '';
-                var providerQty = booking.provider ? booking.provider.qty || '' : '';
-                var providerEmail = booking.provider ? booking.provider.email || '' : '';
-                var providerDescription = booking.provider ? booking.provider.description || '' : '';
-                var providerPhone = booking.provider ? booking.provider.phone || '' : '';
-                var providerPicture = booking.provider ? booking.provider.picture || '' : '';
-                var providerColor = booking.provider ? booking.provider.color || '' : '';
-                var providerIsActive = booking.provider ? (booking.provider.is_active ? 'Yes' : 'No') : '';
-                var providerIsVisible = booking.provider ? (booking.provider.is_visible ? 'Yes' : 'No') : '';
-                var providerServices = booking.provider && booking.provider.services ? booking.provider.services.join(';') : '';
-
-                // Extract location and category data
-                var locationName = booking.location ? booking.location.name || '' : '';
-                var categoryName = booking.category ? booking.category.name || '' : '';
-
-                // Format dates and times
-                var startDateTime = booking.start_datetime || '';
-                var endDateTime = booking.end_datetime || '';
-                var recordDate = booking.record_date || '';
-                var invoiceDateTime = booking.invoice_datetime || '';
-                var ticketValidationDateTime = booking.ticket_validation_datetime || '';
-
-                // Extract date and time components
-                var dateStart = startDateTime ? startDateTime.split(' ')[0] : '';
-                var time = startDateTime ? startDateTime.split(' ')[1] : '';
-
-                // Helper function to safely escape CSV values
-                var escapeCSV = function(value) {
-                    if (value === null || value === undefined) return '';
-                    var stringValue = String(value);
-                    if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
-                        return `"${stringValue.replace(/"/g, '""')}"`;
-                    }
-                    return stringValue;
+                // Create extended booking object with company login
+                var extendedBooking = {
+                    company_login: companyData.login
                 };
 
-                var row = [
-                    escapeCSV(companyData.login), // Company
-                    escapeCSV(booking.id), // Booking ID
-                    escapeCSV(booking.code), // Code
-                    escapeCSV(clientName), // Client Name
-                    escapeCSV(clientEmail), // Client Email
-                    escapeCSV(clientPhone), // Client Phone
-                    escapeCSV(clientAddress), // Client Address
-                    escapeCSV(serviceName), // Service Name
-                    escapeCSV(providerName), // Provider Name
-                    escapeCSV(locationName), // Location Name
-                    escapeCSV(startDateTime), // Start DateTime
-                    escapeCSV(endDateTime), // End DateTime
-                    escapeCSV(booking.duration), // Duration
-                    escapeCSV(booking.status), // Status
-                    escapeCSV(booking.invoice_number), // Invoice Number
-                    escapeCSV(booking.invoice_status), // Invoice Status
-                    escapeCSV(categoryName), // Category
-                    escapeCSV(booking.ticket_code), // Ticket Code
-                    escapeCSV(servicePrice), // Amount (using service price)
-                    escapeCSV(serviceCurrency), // Currency
-                    escapeCSV(''), // Attribute (not available in current API)
-                    escapeCSV(''), // Canceled By (not available in current API)
-                    escapeCSV(''), // Canceled By Admin (not available in current API)
-                    escapeCSV(''), // Cancellation Time (not available in current API)
-                    escapeCSV(''), // Cancellation Type (not available in current API)
-                    escapeCSV(''), // Comment (not available in current API)
-                    escapeCSV(''), // Created By (not available in current API)
-                    escapeCSV(''), // Created By Admin (not available in current API)
-                    escapeCSV(companyData.login), // Database (using company login)
-                    escapeCSV(dateStart), // Date Start
-                    escapeCSV(serviceName), // Event Name (using service name)
-                    escapeCSV(booking.status === 'canceled' ? 'Yes' : 'No'), // Is Cancelled
-                    escapeCSV(''), // Number of Changes (not available in current API)
-                    escapeCSV(booking.invoice_payment_processor), // Payment System
-                    escapeCSV(servicePrice), // Price
-                    escapeCSV(''), // Promocodes (not available in current API)
-                    escapeCSV(recordDate), // Record Date
-                    escapeCSV(time), // Time
-                    escapeCSV(providerName), // Unit Name (using provider name)
-                    escapeCSV(booking.membership_id), // Membership ID
-                    escapeCSV(booking.invoice_payment_received ? 'Yes' : 'No'), // Invoice Payment Received
-                    escapeCSV(invoiceDateTime), // Invoice DateTime
-                    escapeCSV(booking.invoice_payment_processor), // Invoice Payment Processor
-                    escapeCSV(ticketValidationDateTime), // Ticket Validation DateTime
-                    escapeCSV(booking.ticket_is_used ? 'Yes' : 'No'), // Ticket Is Used
-                    escapeCSV(booking.testing_status), // Testing Status
-                    escapeCSV(booking.user_status_id), // User Status ID
-                    escapeCSV(booking.category_id), // Category ID
-                    escapeCSV(booking.location_id), // Location ID
-                    escapeCSV(booking.service_id), // Service ID
-                    escapeCSV(booking.provider_id), // Provider ID
-                    escapeCSV(booking.client_id), // Client ID
-                    escapeCSV(booking.client_timezone), // Client Timezone
-                    escapeCSV(booking.client_time_offset), // Client Time Offset
-                    escapeCSV(booking.batch_id), // Batch ID
-                    escapeCSV(booking.batch_type), // Batch Type
-                    escapeCSV(booking.is_confirmed ? 'Yes' : 'No'), // Is Confirmed
-                    escapeCSV(booking.can_be_edited ? 'Yes' : 'No'), // Can Be Edited
-                    escapeCSV(booking.can_be_canceled ? 'Yes' : 'No'), // Can Be Canceled
-                    escapeCSV(clientCountry), // Client Country
-                    escapeCSV(clientState), // Client State
-                    escapeCSV(clientFullAddress), // Client Full Address
-                    escapeCSV(clientIsDeleted), // Client Is Deleted
-                    escapeCSV(clientEmailPromo), // Client Email Promo Subscribed
-                    escapeCSV(clientSmsPromo), // Client SMS Promo Subscribed
-                    escapeCSV(serviceDescription), // Service Description
-                    escapeCSV(servicePrice), // Service Price
-                    escapeCSV(serviceCurrency), // Service Currency
-                    escapeCSV(serviceDepositPrice), // Service Deposit Price
-                    escapeCSV(serviceTaxId), // Service Tax ID
-                    escapeCSV(serviceTax), // Service Tax
-                    escapeCSV(serviceBufferTime), // Service Buffer Time After
-                    escapeCSV(servicePicture), // Service Picture
-                    escapeCSV(serviceMemberships), // Service Memberships
-                    escapeCSV(serviceIsActive), // Service Is Active
-                    escapeCSV(serviceIsVisible), // Service Is Visible
-                    escapeCSV(serviceDurationType), // Service Duration Type
-                    escapeCSV(serviceLimitBooking), // Service Limit Booking
-                    escapeCSV(serviceMinGroupBooking), // Service Min Group Booking
-                    escapeCSV(providerQty), // Provider QTY
-                    escapeCSV(providerEmail), // Provider Email
-                    escapeCSV(providerDescription), // Provider Description
-                    escapeCSV(providerPhone), // Provider Phone
-                    escapeCSV(providerPicture), // Provider Picture
-                    escapeCSV(providerColor), // Provider Color
-                    escapeCSV(providerIsActive), // Provider Is Active
-                    escapeCSV(providerIsVisible), // Provider Is Visible
-                    escapeCSV(providerServices) // Provider Services
-                ].join(',');
+                // Copy all booking properties
+                for (var key in booking) {
+                    if (booking.hasOwnProperty(key)) {
+                        extendedBooking[key] = booking[key];
+                    }
+                }
 
-                csvContent += row + '\n';
+                // Flatten the entire booking object
+                var flatBooking = flattenObject(extendedBooking);
+
+                // Build headers from first booking
+                if (!headersSet) {
+                    var allKeys = Object.keys(flatBooking);
+
+                    // Define priority fields in order
+                    var priorityFields = ['company_login', 'code', 'record_date', 'date_start', 'time', 'event_name', 'unit_name', 'client_name', 'client_email'];
+
+                    // Separate priority fields from others
+                    var priorityHeaders = [];
+                    var otherHeaders = [];
+
+                    priorityFields.forEach(function(field) {
+                        if (allKeys.indexOf(field) !== -1) {
+                            priorityHeaders.push(field);
+                        }
+                    });
+
+                    // Get remaining fields and sort them
+                    allKeys.forEach(function(key) {
+                        if (priorityFields.indexOf(key) === -1) {
+                            otherHeaders.push(key);
+                        }
+                    });
+                    otherHeaders.sort();
+
+                    // Combine: priority fields first, then sorted others
+                    headers = priorityHeaders.concat(otherHeaders);
+
+                    csvRows.push(headers.map(escapeCSV).join(','));
+                    headersSet = true;
+                }
+
+                // Build row with values in same order as headers
+                var row = headers.map(function(header) {
+                    return escapeCSV(flatBooking[header]);
+                });
+
+                csvRows.push(row.join(','));
             });
         });
 
-        return csvContent;
+        return csvRows.join('\n');
     },
 
     generateFileName: function() {
