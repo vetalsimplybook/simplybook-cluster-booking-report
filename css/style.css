@@ -152,6 +152,15 @@
   color: #333;
   margin-bottom: 1rem;
 }
+.report-filters .filters-help li {
+  margin-bottom: 0.35rem;
+}
+.report-filters .filters-help li:last-child {
+  margin-bottom: 0;
+}
+.report-filters .filters-help strong {
+  color: #495057;
+}
 /* Companies selection styles */
 .companies-list {
   max-height: 450px;

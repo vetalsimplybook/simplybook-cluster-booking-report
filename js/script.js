@@ -72,6 +72,12 @@ jQuery.extend(ReportCreator.prototype, {
         $(document).on('change', '.company-checkbox', function() {
             self.updateSelectedCompanies();
         });
+
+        // Retry a single company's report (delegated, button is added at runtime)
+        $(document).on('click', '.retry-company-btn', function(e) {
+            e.preventDefault();
+            self.retryCompany($(this).data('company'));
+        });
     },
 
     initializeForm: function() {
@@ -548,6 +554,11 @@ jQuery.extend(ReportCreator.prototype, {
             return;
         }
 
+        var reportTimeoutMinutes = parseInt($('#report_timeout').val(), 10);
+        if (!reportTimeoutMinutes || reportTimeoutMinutes < 1) {
+            reportTimeoutMinutes = 2;
+        }
+
         var reportParams = {
             companies: this.selectedCompanies,
             dateFrom: $('#date_from').val(),
@@ -555,7 +566,8 @@ jQuery.extend(ReportCreator.prototype, {
             bookingStatus: $('#booking_status').val(),
             // New optional created date filters (fallback to booking dates if not provided)
             createdDateFrom: $('#created_date_from').length ? $('#created_date_from').val() : $('#date_from').val(),
-            createdDateTo: $('#created_date_to').length ? $('#created_date_to').val() : $('#date_to').val()
+            createdDateTo: $('#created_date_to').length ? $('#created_date_to').val() : $('#date_to').val(),
+            reportTimeoutMinutes: reportTimeoutMinutes
         };
 
         if (reportParams.dateFrom && reportParams.dateTo) {
@@ -847,7 +859,9 @@ jQuery.extend(ReportCreator.prototype, {
                         console.log('Report created for ' + companyLogin + ' with ID: ' + reportId);
 
                         // Step 2: Poll for report completion
-                        self.pollReportStatus(companyLogin, reportId, resolve, reject);
+                        var pollIntervalMs = 5000;
+                        var maxAttempts = Math.max(1, Math.round((reportParams.reportTimeoutMinutes * 60 * 1000) / pollIntervalMs));
+                        self.pollReportStatus(companyLogin, reportId, resolve, reject, maxAttempts, pollIntervalMs);
                     } else {
                         reject(new Error('Invalid report creation response'));
                     }
@@ -868,11 +882,11 @@ jQuery.extend(ReportCreator.prototype, {
         });
     },
 
-    pollReportStatus: function(companyLogin, reportId, resolve, reject) {
+    pollReportStatus: function(companyLogin, reportId, resolve, reject, maxAttempts, pollInterval) {
         var self = this;
-        var maxAttempts = 60; // Max 60 attempts (5 minutes with 5 second intervals)
+        maxAttempts = maxAttempts || 60; // Default: 5 minutes with 5 second intervals
+        pollInterval = pollInterval || 5000; // 5 seconds
         var attemptCount = 0;
-        var pollInterval = 5000; // 5 seconds
 
         function checkStatus() {
             attemptCount++;
@@ -914,7 +928,7 @@ jQuery.extend(ReportCreator.prototype, {
                         });
                     } else if (attemptCount >= maxAttempts) {
                         // Timeout
-                        reject(new Error('Report generation timeout'));
+                        reject(new Error('Report generation timeout after ' + Math.round(maxAttempts * pollInterval / 60000) + ' min. Increase Report Timeout above and retry this company.'));
                     } else {
                         // Report not ready yet, poll again
                         console.log('Report ' + reportId + ' processing, attempt ' + attemptCount + '/' + maxAttempts);
@@ -927,7 +941,7 @@ jQuery.extend(ReportCreator.prototype, {
                         console.log('Report ' + reportId + ' processing, attempt ' + attemptCount + '/' + maxAttempts);
                         setTimeout(checkStatus, pollInterval);
                     } else if (attemptCount >= maxAttempts) {
-                        reject(new Error('Report generation timeout'));
+                        reject(new Error('Report generation timeout after ' + Math.round(maxAttempts * pollInterval / 60000) + ' min. Increase Report Timeout above and retry this company.'));
                     } else {
                         self.handleApiError(xhr, 'pollReportStatus');
 
@@ -987,6 +1001,10 @@ jQuery.extend(ReportCreator.prototype, {
                 icon = 'fas fa-clock';
         }
 
+        var showRetry = (status === 'token-error' || status === 'bookings-error');
+        var retryButtonHtml = showRetry ?
+            `<button type="button" class="btn btn-sm btn-outline-danger retry-company-btn ms-2" data-company="${companyLogin}" title="Retry this company"><i class="fas fa-redo"></i></button>` : '';
+
         var existingItem = $(`#status-${companyLogin}`);
         if (existingItem.length === 0) {
             $('#company-status-list').append(`
@@ -997,13 +1015,67 @@ jQuery.extend(ReportCreator.prototype, {
                             <strong>${companyLogin}</strong><br>
                             <small class="status-message ${statusClass}">${message}</small>
                         </div>
+                        <span class="retry-container">${retryButtonHtml}</span>
                     </div>
                 </div>
             `);
         } else {
-            existingItem.find('i').attr('class', `${icon} me-2 ${statusClass}`);
+            existingItem.find('i').first().attr('class', `${icon} me-2 ${statusClass}`);
             existingItem.find('.status-message').attr('class', `status-message ${statusClass}`).text(message);
+            existingItem.find('.retry-container').html(retryButtonHtml);
         }
+    },
+
+    // Re-fetch the report for a single company without restarting the whole run
+    retryCompany: function(companyLogin) {
+        var self = this;
+        var reportParams = this.reportData.reportParams;
+
+        // Drop this company's previous error and any partial data before retrying
+        this.reportData.errors = this.reportData.errors.filter(function(err) {
+            return err.company !== companyLogin;
+        });
+        this.reportData.companies = this.reportData.companies.filter(function(companyData) {
+            if (companyData.login !== companyLogin) return true;
+            self.reportData.totalBookings -= companyData.bookings.length;
+            return false;
+        });
+
+        this.updateCompanyStatus(companyLogin, 'bookings-generating', 'Retrying...');
+
+        var tokenPromise = this.companyTokens[companyLogin] ?
+            Promise.resolve(this.companyTokens[companyLogin]) :
+            this.getCompanyToken(companyLogin).then(function(token) {
+                self.companyTokens[companyLogin] = token;
+                return token;
+            });
+
+        tokenPromise
+            .then(function() {
+                return self.getCompanyBookings(companyLogin, reportParams);
+            })
+            .then(function(bookingsData) {
+                self.updateCompanyStatus(companyLogin, 'bookings-success',
+                    `Found ${bookingsData.bookings.length} bookings`);
+
+                self.reportData.companies.push({
+                    login: companyLogin,
+                    bookings: bookingsData.bookings,
+                    totalCount: bookingsData.totalCount
+                });
+                self.reportData.totalBookings += bookingsData.bookings.length;
+            })
+            .catch(function(error) {
+                self.updateCompanyStatus(companyLogin, 'bookings-error', 'Bookings failed: ' + error.message);
+                self.reportData.errors.push({
+                    company: companyLogin,
+                    stage: 'bookings',
+                    error: error.message
+                });
+            })
+            .finally(function() {
+                self.showReportResults();
+            });
     },
 
     showReportResults: function() {
@@ -1029,11 +1101,13 @@ jQuery.extend(ReportCreator.prototype, {
 
             $('#error-content').html(errorHtml);
             $('#error-summary').show();
+        } else {
+            $('#error-summary').hide();
         }
 
         // Show download button if we have data
         if (this.reportData.totalBookings > 0) {
-            $('#download-report').show().on('click', function() {
+            $('#download-report').show().off('click').on('click', function() {
                 self.downloadCSVReport();
             });
         }
