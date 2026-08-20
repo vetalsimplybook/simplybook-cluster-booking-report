@@ -973,56 +973,68 @@ jQuery.extend(ReportCreator.prototype, {
 
     updateCompanyStatus: function(companyLogin, status, message) {
         var statusClass = '';
+        var cardClass = '';
         var icon = '';
 
         switch (status) {
             case 'token-success':
                 statusClass = 'text-success';
+                cardClass = 'is-success';
                 icon = 'fas fa-check';
                 break;
             case 'token-error':
                 statusClass = 'text-danger';
+                cardClass = 'is-error';
                 icon = 'fas fa-times';
                 break;
             case 'bookings-generating':
                 statusClass = 'text-info';
+                cardClass = 'is-pending';
                 icon = 'fas fa-spinner fa-spin';
                 break;
             case 'bookings-success':
                 statusClass = 'text-success';
+                cardClass = 'is-success';
                 icon = 'fas fa-check-double';
                 break;
             case 'bookings-error':
                 statusClass = 'text-danger';
+                cardClass = 'is-error';
                 icon = 'fas fa-exclamation-triangle';
                 break;
             default:
                 statusClass = 'text-muted';
+                cardClass = '';
                 icon = 'fas fa-clock';
         }
 
         var showRetry = (status === 'token-error' || status === 'bookings-error');
         var retryButtonHtml = showRetry ?
-            `<button type="button" class="btn btn-sm btn-outline-danger retry-company-btn ms-2" data-company="${companyLogin}" title="Retry this company"><i class="fas fa-redo"></i></button>` : '';
+            `<button type="button" class="btn btn-sm btn-outline-danger retry-company-btn" data-company="${companyLogin}">
+                <i class="fas fa-redo me-1"></i>Retry
+            </button>` : '';
 
         var existingItem = $(`#status-${companyLogin}`);
         if (existingItem.length === 0) {
             $('#company-status-list').append(`
                 <div class="col-md-4 mb-2" id="status-${companyLogin}">
-                    <div class="d-flex align-items-center">
-                        <i class="${icon} me-2 ${statusClass}"></i>
-                        <div class="flex-grow-1">
-                            <strong>${companyLogin}</strong><br>
-                            <small class="status-message ${statusClass}">${message}</small>
+                    <div class="company-status-card ${cardClass}">
+                        <div class="d-flex align-items-start">
+                            <i class="${icon} me-2 mt-1 ${statusClass}"></i>
+                            <div class="flex-grow-1">
+                                <strong>${companyLogin}</strong><br>
+                                <small class="status-message ${statusClass}">${message}</small>
+                            </div>
                         </div>
-                        <span class="retry-container">${retryButtonHtml}</span>
+                        <div class="retry-container">${retryButtonHtml}</div>
                     </div>
                 </div>
             `);
         } else {
-            existingItem.find('i').first().attr('class', `${icon} me-2 ${statusClass}`);
-            existingItem.find('.status-message').attr('class', `status-message ${statusClass}`).text(message);
-            existingItem.find('.retry-container').html(retryButtonHtml);
+            var card = existingItem.find('.company-status-card').attr('class', `company-status-card ${cardClass}`);
+            card.find('i').first().attr('class', `${icon} me-2 mt-1 ${statusClass}`);
+            card.find('.status-message').attr('class', `status-message ${statusClass}`).text(message);
+            card.find('.retry-container').html(retryButtonHtml);
         }
     },
 

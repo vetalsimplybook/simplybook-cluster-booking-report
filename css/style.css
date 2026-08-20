@@ -200,6 +200,29 @@
   flex-grow: 1;
   width: 100%;
 }
+.company-status-card {
+  height: 100%;
+  padding: 0.75rem 1rem;
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  background: #f8f9fa;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.company-status-card.is-success {
+  border-color: rgba(40, 167, 69, 0.35);
+  background: rgba(40, 167, 69, 0.06);
+}
+.company-status-card.is-error {
+  border-color: rgba(220, 53, 69, 0.35);
+  background: rgba(220, 53, 69, 0.06);
+}
+.company-status-card.is-pending {
+  border-color: rgba(46, 171, 226, 0.35);
+  background: rgba(46, 171, 226, 0.06);
+}
+.company-status-card .retry-company-btn {
+  margin-top: 0.6rem;
+}
 .company-item {
   display: flex;
   align-items: center;

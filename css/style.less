@@ -247,6 +247,34 @@
     }
 }
 
+.company-status-card {
+    height: 100%;
+    padding: 0.75rem 1rem;
+    border: 1px solid @border-color;
+    border-radius: 8px;
+    background: #f8f9fa;
+    transition: border-color 0.2s ease, background-color 0.2s ease;
+
+    &.is-success {
+        border-color: fade(@success-color, 35%);
+        background: fade(@success-color, 6%);
+    }
+
+    &.is-error {
+        border-color: fade(#dc3545, 35%);
+        background: fade(#dc3545, 6%);
+    }
+
+    &.is-pending {
+        border-color: fade(@primary-color, 35%);
+        background: fade(@primary-color, 6%);
+    }
+
+    .retry-company-btn {
+        margin-top: 0.6rem;
+    }
+}
+
 .company-item {
     display: flex;
     align-items: center;
