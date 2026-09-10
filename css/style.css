@@ -220,6 +220,10 @@
   border-color: rgba(46, 171, 226, 0.35);
   background: rgba(46, 171, 226, 0.06);
 }
+.company-status-card.is-partial {
+  border-color: rgba(255, 193, 7, 0.45);
+  background: rgba(255, 193, 7, 0.08);
+}
 .company-status-card .retry-company-btn {
   margin-top: 0.6rem;
 }

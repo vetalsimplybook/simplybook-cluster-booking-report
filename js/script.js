@@ -11,6 +11,8 @@ var ReportCreator = function() {
     this.companies = [];
     this.selectedCompanies = [];
     this.companyTokens = {};
+    this.companyServices = {};
+    this.selectedServiceNames = [];
     this.reportData = {
         companies: [],
         totalBookings: 0,
@@ -77,6 +79,17 @@ jQuery.extend(ReportCreator.prototype, {
         $(document).on('click', '.retry-company-btn', function(e) {
             e.preventDefault();
             self.retryCompany($(this).data('company'));
+        });
+
+        // Load services for the currently selected companies
+        $('#load-services-btn').on('click', function(e) {
+            e.preventDefault();
+            self.loadServicesForSelectedCompanies();
+        });
+
+        // Service checkbox change handler (delegated, list is populated at runtime)
+        $(document).on('change', '.service-checkbox', function() {
+            self.updateSelectedServiceNames();
         });
     },
 
@@ -534,6 +547,13 @@ jQuery.extend(ReportCreator.prototype, {
             checkedCheckboxes > 0 && checkedCheckboxes < totalCheckboxes);
         $('#select-all-companies').prop('checked',
             checkedCheckboxes === totalCheckboxes && totalCheckboxes > 0);
+
+        // Company selection changed - any previously loaded services no longer match, reset them
+        $('#load-services-btn').prop('disabled', this.selectedCompanies.length === 0);
+        $('#services-list').hide().empty();
+        $('#services-error').hide();
+        this.companyServices = {};
+        this.selectedServiceNames = [];
     },
 
     showCompaniesError: function(message) {
@@ -546,6 +566,123 @@ jQuery.extend(ReportCreator.prototype, {
     goBackToAuthentication: function() {
         $('.step-2').removeClass('active');
         $('.step-1').addClass('active');
+    },
+
+    loadServicesForSelectedCompanies: function() {
+        var self = this;
+        var companies = this.selectedCompanies.slice();
+
+        $('#services-error').hide();
+        $('#services-list').hide().empty();
+        $('#services-loading').show();
+
+        var tokenPromises = companies.map(function(companyLogin) {
+            if (self.companyTokens[companyLogin]) {
+                return Promise.resolve();
+            }
+            return self.getCompanyToken(companyLogin)
+                .then(function(token) {
+                    self.companyTokens[companyLogin] = token;
+                })
+                .catch(function() {
+                    // This company's services just won't be listed; report generation
+                    // will surface its token error the same way it does today.
+                });
+        });
+
+        Promise.all(tokenPromises)
+            .then(function() {
+                var servicePromises = companies
+                    .filter(function(companyLogin) {
+                        return !!self.companyTokens[companyLogin];
+                    })
+                    .map(function(companyLogin) {
+                        return self.getCompanyServices(companyLogin)
+                            .then(function(services) {
+                                self.companyServices[companyLogin] = services;
+                            })
+                            .catch(function() {
+                                self.companyServices[companyLogin] = [];
+                            });
+                    });
+
+                return Promise.all(servicePromises);
+            })
+            .then(function() {
+                $('#services-loading').hide();
+                self.displayServices();
+            })
+            .catch(function(error) {
+                $('#services-loading').hide();
+                $('#services-error').text('Failed to load services: ' + error.message).show();
+            });
+    },
+
+    getCompanyServices: function(companyLogin) {
+        var self = this;
+
+        return new Promise(function(resolve, reject) {
+            $.ajax({
+                url: self.getUserApiUrl() + '/admin/services',
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Token': self.companyTokens[companyLogin],
+                    'X-Company-Login': companyLogin
+                },
+                success: function(response) {
+                    var services = Array.isArray(response) ? response : (response && response.data) || [];
+                    resolve(services);
+                },
+                error: function(xhr, status, error) {
+                    self.handleApiError(xhr, 'getCompanyServices');
+                    reject(new Error(error || 'Failed to load services'));
+                }
+            });
+        });
+    },
+
+    displayServices: function() {
+        var self = this;
+        var nameToCount = {};
+
+        Object.keys(this.companyServices).forEach(function(companyLogin) {
+            (self.companyServices[companyLogin] || []).forEach(function(service) {
+                nameToCount[service.name] = (nameToCount[service.name] || 0) + 1;
+            });
+        });
+
+        var names = Object.keys(nameToCount).sort();
+        var list = $('#services-list');
+        list.empty();
+
+        if (names.length === 0) {
+            list.html('<p class="text-muted small mb-0 p-2">No services found for the selected companies.</p>');
+        } else {
+            var totalCompanies = this.selectedCompanies.length;
+            names.forEach(function(name, index) {
+                list.append(`
+                    <div class="form-check">
+                        <input class="form-check-input service-checkbox" type="checkbox" value="${name}" id="service-${index}">
+                        <label class="form-check-label" for="service-${index}">
+                            ${name} <span class="text-muted small">(${nameToCount[name]}/${totalCompanies} companies)</span>
+                        </label>
+                    </div>
+                `);
+            });
+        }
+
+        list.show();
+        this.updateSelectedServiceNames();
+    },
+
+    updateSelectedServiceNames: function() {
+        var self = this;
+        this.selectedServiceNames = [];
+
+        $('.service-checkbox:checked').each(function() {
+            self.selectedServiceNames.push($(this).val());
+        });
     },
 
     proceedToReport: function() {
@@ -567,7 +704,9 @@ jQuery.extend(ReportCreator.prototype, {
             // New optional created date filters (fallback to booking dates if not provided)
             createdDateFrom: $('#created_date_from').length ? $('#created_date_from').val() : $('#date_from').val(),
             createdDateTo: $('#created_date_to').length ? $('#created_date_to').val() : $('#date_to').val(),
-            reportTimeoutMinutes: reportTimeoutMinutes
+            reportTimeoutMinutes: reportTimeoutMinutes,
+            selectedServiceNames: this.selectedServiceNames.slice(),
+            chunkPeriod: $('#chunk_period').val() || 'none'
         };
 
         if (reportParams.dateFrom && reportParams.dateTo) {
@@ -607,6 +746,12 @@ jQuery.extend(ReportCreator.prototype, {
             dateRangeText = 'All dates';
         }
 
+        var servicesText = reportParams.selectedServiceNames.length ?
+            reportParams.selectedServiceNames.join(', ') : 'All services';
+
+        var chunkLabels = { none: 'None', week: 'Weekly', month: 'Monthly' };
+        var chunkText = chunkLabels[reportParams.chunkPeriod] || 'None';
+
         $('.step-3').html(`
             <div class="form-signin-wide w-100 m-auto">
                 <svg class="header--logo-image mb-4" xmlns="http://www.w3.org/2000/svg" height="40" viewBox="0 0 122.55 18.92">
@@ -627,6 +772,8 @@ jQuery.extend(ReportCreator.prototype, {
                         <div class="col-md-6">
                             <p><strong>Booking Status:</strong> ${statusText}</p>
                             <p><strong>Cluster:</strong> ${this.config.cluster}</p>
+                            <p><strong>Services:</strong> ${servicesText}</p>
+                            <p><strong>Splitting:</strong> ${chunkText}</p>
                         </div>
                     </div>
                 </div>
@@ -776,36 +923,13 @@ jQuery.extend(ReportCreator.prototype, {
             // Update status to show report is being generated
             self.updateCompanyStatus(companyLogin, 'bookings-generating', 'Generating report...');
 
-            var promise = self.getCompanyBookings(companyLogin, reportParams)
-                .then(function(bookingsData) {
+            var promise = self.collectCompanyReport(companyLogin, reportParams)
+                .then(function(result) {
                     completedCompanies++;
                     var progress = Math.round((completedCompanies / totalCompanies) * 100);
                     self.updateProgress(progress, `Collected bookings from ${completedCompanies}/${totalCompanies} companies`);
 
-                    self.updateCompanyStatus(companyLogin, 'bookings-success',
-                        `Found ${bookingsData.bookings.length} bookings`);
-
-                    self.reportData.companies.push({
-                        login: companyLogin,
-                        bookings: bookingsData.bookings,
-                        totalCount: bookingsData.totalCount
-                    });
-
-                    self.reportData.totalBookings += bookingsData.bookings.length;
-                })
-                .catch(function(error) {
-                    completedCompanies++;
-                    var progress = Math.round((completedCompanies / totalCompanies) * 100);
-                    self.updateProgress(progress, `Error collecting from ${companyLogin}: ${error.message}`);
-
-                    self.updateCompanyStatus(companyLogin, 'bookings-error',
-                        'Bookings failed: ' + error.message);
-
-                    self.reportData.errors.push({
-                        company: companyLogin,
-                        stage: 'bookings',
-                        error: error.message
-                    });
+                    self.applyCompanyReportResult(companyLogin, result);
                 });
 
             promises.push(promise);
@@ -814,19 +938,183 @@ jQuery.extend(ReportCreator.prototype, {
         return Promise.allSettled(promises);
     },
 
-    getCompanyBookings: function(companyLogin, reportParams) {
+    // Resolve which service ids to query for a company based on the selected service
+    // names. Returns [{eventId: null, serviceName: null}] when no service filter is set
+    // (meaning "no event_id filter, query everything"), or [] when the company has none
+    // of the selected services (meaning "skip this company, nothing to fetch").
+    resolveServiceJobsForCompany: function(companyLogin, reportParams) {
+        if (!reportParams.selectedServiceNames || reportParams.selectedServiceNames.length === 0) {
+            return [{ eventId: null, serviceName: null }];
+        }
+
+        var services = this.companyServices[companyLogin] || [];
+        var matched = services.filter(function(service) {
+            return reportParams.selectedServiceNames.indexOf(service.name) !== -1;
+        });
+
+        return matched.map(function(service) {
+            return { eventId: service.id, serviceName: service.name };
+        });
+    },
+
+    // Splits a booking date range into contiguous chunks of `period` size ('week' = 7
+    // days, 'month' = 30 days, rolling windows rather than calendar-aligned). Returns
+    // the whole range as a single chunk when chunking isn't applicable (no period, or
+    // one of the dates is missing).
+    generateDateChunks: function(dateFromStr, dateToStr, period) {
+        if ((period !== 'week' && period !== 'month') || !dateFromStr || !dateToStr) {
+            return [{ from: dateFromStr || '', to: dateToStr || '' }];
+        }
+
+        var chunkDays = period === 'week' ? 7 : 30;
+        var chunks = [];
+        var current = new Date(dateFromStr + 'T00:00:00');
+        var end = new Date(dateToStr + 'T00:00:00');
+
+        var formatDate = function(date) {
+            return date.getFullYear() + '-' +
+                String(date.getMonth() + 1).padStart(2, '0') + '-' +
+                String(date.getDate()).padStart(2, '0');
+        };
+
+        while (current <= end) {
+            var chunkEnd = new Date(current);
+            chunkEnd.setDate(chunkEnd.getDate() + chunkDays - 1);
+            if (chunkEnd > end) {
+                chunkEnd = new Date(end);
+            }
+
+            chunks.push({ from: formatDate(current), to: formatDate(chunkEnd) });
+
+            current = new Date(chunkEnd);
+            current.setDate(current.getDate() + 1);
+        }
+
+        return chunks;
+    },
+
+    describeJob: function(job) {
+        var parts = [job.serviceName || 'All services'];
+        if (job.dateFrom || job.dateTo) {
+            parts.push(`${job.dateFrom || '…'} → ${job.dateTo || '…'}`);
+        }
+        return parts.join(', ');
+    },
+
+    // Fetches one company's report across every (service x date-chunk) combination,
+    // sequentially, so a large report becomes several small ones instead of one big
+    // request that's more likely to time out. Never rejects - job failures are
+    // collected in jobErrors so the rest of the jobs still run and partial data isn't lost.
+    collectCompanyReport: function(companyLogin, reportParams) {
         var self = this;
+        var serviceJobs = this.resolveServiceJobsForCompany(companyLogin, reportParams);
+
+        if (serviceJobs.length === 0) {
+            return Promise.resolve({ skipped: true, bookings: [], totalCount: 0, jobErrors: [], totalJobs: 0 });
+        }
+
+        var dateChunks = this.generateDateChunks(reportParams.dateFrom, reportParams.dateTo, reportParams.chunkPeriod);
+
+        var jobs = [];
+        serviceJobs.forEach(function(serviceJob) {
+            dateChunks.forEach(function(dateChunk) {
+                jobs.push({
+                    eventId: serviceJob.eventId,
+                    serviceName: serviceJob.serviceName,
+                    dateFrom: dateChunk.from,
+                    dateTo: dateChunk.to
+                });
+            });
+        });
+
+        var allBookings = [];
+        var jobErrors = [];
+        var jobIndex = 0;
+        var chain = Promise.resolve();
+
+        jobs.forEach(function(job) {
+            chain = chain.then(function() {
+                jobIndex++;
+                var label = self.describeJob(job);
+                self.updateCompanyStatus(companyLogin, 'bookings-generating',
+                    `Fetching ${jobIndex}/${jobs.length}: ${label}`);
+
+                return self.getCompanyBookings(companyLogin, reportParams, job)
+                    .then(function(bookingsData) {
+                        allBookings = allBookings.concat(bookingsData.bookings);
+                    })
+                    .catch(function(error) {
+                        jobErrors.push({ label: label, error: error.message });
+                    });
+            });
+        });
+
+        return chain.then(function() {
+            return {
+                skipped: false,
+                bookings: allBookings,
+                totalCount: allBookings.length,
+                jobErrors: jobErrors,
+                totalJobs: jobs.length
+            };
+        });
+    },
+
+    // Applies a collectCompanyReport() result to reportData and the company's status card.
+    applyCompanyReportResult: function(companyLogin, result) {
+        var self = this;
+
+        if (result.skipped) {
+            this.updateCompanyStatus(companyLogin, 'bookings-success', 'No matching services for this company');
+            this.reportData.companies.push({ login: companyLogin, bookings: [], totalCount: 0 });
+            return;
+        }
+
+        this.reportData.companies.push({
+            login: companyLogin,
+            bookings: result.bookings,
+            totalCount: result.totalCount
+        });
+        this.reportData.totalBookings += result.bookings.length;
+
+        var successCount = result.totalJobs - result.jobErrors.length;
+
+        if (result.jobErrors.length === 0) {
+            this.updateCompanyStatus(companyLogin, 'bookings-success', `Found ${result.bookings.length} bookings`);
+        } else if (successCount === 0) {
+            this.updateCompanyStatus(companyLogin, 'bookings-error',
+                `All ${result.totalJobs} requests failed: ${result.jobErrors[0].error}`);
+        } else {
+            this.updateCompanyStatus(companyLogin, 'bookings-partial',
+                `${successCount}/${result.totalJobs} succeeded, ${result.jobErrors.length} failed`);
+        }
+
+        result.jobErrors.forEach(function(jobError) {
+            self.reportData.errors.push({
+                company: companyLogin,
+                stage: 'bookings',
+                error: `[${jobError.label}] ${jobError.error}`
+            });
+        });
+    },
+
+    getCompanyBookings: function(companyLogin, reportParams, jobOverrides) {
+        var self = this;
+        jobOverrides = jobOverrides || {};
 
         return new Promise(function(resolve, reject) {
             var filter = {};
             if (reportParams.bookingStatus) {
                 filter.status = reportParams.bookingStatus;
             }
-            if (reportParams.dateFrom) {
-                filter.date_from = reportParams.dateFrom;
+
+            var dateFrom = jobOverrides.dateFrom !== undefined ? jobOverrides.dateFrom : reportParams.dateFrom;
+            var dateTo = jobOverrides.dateTo !== undefined ? jobOverrides.dateTo : reportParams.dateTo;
+            if (dateFrom) {
+                filter.date_from = dateFrom;
             }
-            if (reportParams.dateTo) {
-                filter.date_to = reportParams.dateTo;
+            if (dateTo) {
+                filter.date_to = dateTo;
             }
             // Added created date filters
             if (reportParams.createdDateFrom) {
@@ -834,6 +1122,9 @@ jQuery.extend(ReportCreator.prototype, {
             }
             if (reportParams.createdDateTo) {
                 filter.created_date_to = reportParams.createdDateTo;
+            }
+            if (jobOverrides.eventId) {
+                filter.event_id = jobOverrides.eventId;
             }
 
             var requestData = {
@@ -1002,13 +1293,18 @@ jQuery.extend(ReportCreator.prototype, {
                 cardClass = 'is-error';
                 icon = 'fas fa-exclamation-triangle';
                 break;
+            case 'bookings-partial':
+                statusClass = 'text-warning';
+                cardClass = 'is-partial';
+                icon = 'fas fa-exclamation-circle';
+                break;
             default:
                 statusClass = 'text-muted';
                 cardClass = '';
                 icon = 'fas fa-clock';
         }
 
-        var showRetry = (status === 'token-error' || status === 'bookings-error');
+        var showRetry = (status === 'token-error' || status === 'bookings-error' || status === 'bookings-partial');
         var retryButtonHtml = showRetry ?
             `<button type="button" class="btn btn-sm btn-outline-danger retry-company-btn" data-company="${companyLogin}">
                 <i class="fas fa-redo me-1"></i>Retry
@@ -1064,18 +1360,10 @@ jQuery.extend(ReportCreator.prototype, {
 
         tokenPromise
             .then(function() {
-                return self.getCompanyBookings(companyLogin, reportParams);
+                return self.collectCompanyReport(companyLogin, reportParams);
             })
-            .then(function(bookingsData) {
-                self.updateCompanyStatus(companyLogin, 'bookings-success',
-                    `Found ${bookingsData.bookings.length} bookings`);
-
-                self.reportData.companies.push({
-                    login: companyLogin,
-                    bookings: bookingsData.bookings,
-                    totalCount: bookingsData.totalCount
-                });
-                self.reportData.totalBookings += bookingsData.bookings.length;
+            .then(function(result) {
+                self.applyCompanyReportResult(companyLogin, result);
             })
             .catch(function(error) {
                 self.updateCompanyStatus(companyLogin, 'bookings-error', 'Bookings failed: ' + error.message);

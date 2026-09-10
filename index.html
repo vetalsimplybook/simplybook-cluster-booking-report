@@ -136,6 +136,19 @@
                         <!-- Report Filters -->
                         <div class="report-filters mb-4">
                             <h5 class="mb-3">Report Parameters</h5>
+
+                            <div class="services-filter mb-4">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <label class="form-label mb-0">Filter by Services (optional)</label>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="load-services-btn" disabled>
+                                        <i class="fas fa-sync me-1"></i>Load Services
+                                    </button>
+                                </div>
+                                <div id="services-loading" class="text-muted small" style="display:none;">Loading services...</div>
+                                <div id="services-error" class="text-danger small" style="display:none;"></div>
+                                <div id="services-list" class="companies-list" style="display:none;"></div>
+                            </div>
+
                             <div class="row">
                                 <div class="col-md-4">
                                     <div class="form-floating mb-3">
@@ -183,11 +196,23 @@
                                         <label for="report_timeout">Report Timeout (min)</label>
                                     </div>
                                 </div>
+                                <div class="col-md-4">
+                                    <div class="form-floating mb-3">
+                                        <select class="form-select" id="chunk_period" name="chunk_period">
+                                            <option value="none" selected>No Splitting</option>
+                                            <option value="week">By Week</option>
+                                            <option value="month">By Month</option>
+                                        </select>
+                                        <label for="chunk_period">Split Requests By</label>
+                                    </div>
+                                </div>
                             </div>
                             <ul class="filters-help text-muted small mb-0 ps-3">
                                 <li><strong>Booking Date</strong> &mdash; applies to the booking's start time.</li>
                                 <li><strong>Created Date</strong> &mdash; applies to when the booking was created.</li>
                                 <li><strong>Report Timeout</strong> &mdash; how long to wait for a company's report before marking it as failed (you can retry it afterwards).</li>
+                                <li><strong>Services</strong> &mdash; select companies first, then click "Load Services" to filter by specific services; leave empty to include all services.</li>
+                                <li><strong>Split Requests By</strong> &mdash; breaks the Booking Date range into smaller weekly/monthly requests to reduce timeouts on large reports (requires both Booking Date fields to be set).</li>
                                 <li>All filters are optional.</li>
                             </ul>
                         </div>
