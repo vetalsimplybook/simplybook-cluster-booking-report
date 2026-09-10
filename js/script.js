@@ -13,6 +13,7 @@ var ReportCreator = function() {
     this.companyTokens = {};
     this.companyServices = {};
     this.selectedServiceNames = [];
+    this.selectedServiceLabels = [];
     this.reportData = {
         companies: [],
         totalBookings: 0,
@@ -554,6 +555,7 @@ jQuery.extend(ReportCreator.prototype, {
         $('#services-error').hide();
         this.companyServices = {};
         this.selectedServiceNames = [];
+        this.selectedServiceLabels = [];
     },
 
     showCompaniesError: function(message) {
@@ -642,30 +644,46 @@ jQuery.extend(ReportCreator.prototype, {
         });
     },
 
+    // Case/whitespace-insensitive key so the same service isn't listed twice just
+    // because one company has it as "Auction Prep" and another as "auction prep ".
+    normalizeServiceName: function(name) {
+        return (name || '').trim().toLowerCase();
+    },
+
     displayServices: function() {
         var self = this;
-        var nameToCount = {};
+        var groups = {}; // normalized name -> { label, companyLogins: [] }
 
         Object.keys(this.companyServices).forEach(function(companyLogin) {
             (self.companyServices[companyLogin] || []).forEach(function(service) {
-                nameToCount[service.name] = (nameToCount[service.name] || 0) + 1;
+                var key = self.normalizeServiceName(service.name);
+                if (!key) return;
+
+                if (!groups[key]) {
+                    groups[key] = { label: service.name, companyLogins: [] };
+                }
+                groups[key].companyLogins.push(companyLogin);
             });
         });
 
-        var names = Object.keys(nameToCount).sort();
+        var keys = Object.keys(groups).sort(function(a, b) {
+            return groups[a].label.localeCompare(groups[b].label);
+        });
         var list = $('#services-list');
         list.empty();
 
-        if (names.length === 0) {
+        if (keys.length === 0) {
             list.html('<p class="text-muted small mb-0 p-2">No services found for the selected companies.</p>');
         } else {
             var totalCompanies = this.selectedCompanies.length;
-            names.forEach(function(name, index) {
+            keys.forEach(function(key, index) {
+                var group = groups[key];
                 list.append(`
                     <div class="form-check">
-                        <input class="form-check-input service-checkbox" type="checkbox" value="${name}" id="service-${index}">
+                        <input class="form-check-input service-checkbox" type="checkbox" value="${key}" data-label="${group.label}" id="service-${index}">
                         <label class="form-check-label" for="service-${index}">
-                            ${name} <span class="text-muted small">(${nameToCount[name]}/${totalCompanies} companies)</span>
+                            ${group.label} <span class="text-muted small">(${group.companyLogins.length}/${totalCompanies} companies)</span>
+                            <div class="text-muted small">${group.companyLogins.join(', ')}</div>
                         </label>
                     </div>
                 `);
@@ -679,9 +697,11 @@ jQuery.extend(ReportCreator.prototype, {
     updateSelectedServiceNames: function() {
         var self = this;
         this.selectedServiceNames = [];
+        this.selectedServiceLabels = [];
 
         $('.service-checkbox:checked').each(function() {
             self.selectedServiceNames.push($(this).val());
+            self.selectedServiceLabels.push($(this).data('label'));
         });
     },
 
@@ -706,6 +726,7 @@ jQuery.extend(ReportCreator.prototype, {
             createdDateTo: $('#created_date_to').length ? $('#created_date_to').val() : $('#date_to').val(),
             reportTimeoutMinutes: reportTimeoutMinutes,
             selectedServiceNames: this.selectedServiceNames.slice(),
+            selectedServiceLabels: this.selectedServiceLabels.slice(),
             chunkPeriod: $('#chunk_period').val() || 'none'
         };
 
@@ -746,8 +767,8 @@ jQuery.extend(ReportCreator.prototype, {
             dateRangeText = 'All dates';
         }
 
-        var servicesText = reportParams.selectedServiceNames.length ?
-            reportParams.selectedServiceNames.join(', ') : 'All services';
+        var servicesText = reportParams.selectedServiceLabels.length ?
+            reportParams.selectedServiceLabels.join(', ') : 'All services';
 
         var chunkLabels = { none: 'None', week: 'Weekly', month: 'Monthly' };
         var chunkText = chunkLabels[reportParams.chunkPeriod] || 'None';
@@ -939,17 +960,19 @@ jQuery.extend(ReportCreator.prototype, {
     },
 
     // Resolve which service ids to query for a company based on the selected service
-    // names. Returns [{eventId: null, serviceName: null}] when no service filter is set
-    // (meaning "no event_id filter, query everything"), or [] when the company has none
-    // of the selected services (meaning "skip this company, nothing to fetch").
+    // names (matched case/whitespace-insensitively, see normalizeServiceName). Returns
+    // [{eventId: null, serviceName: null}] when no service filter is set (meaning "no
+    // event_id filter, query everything"), or [] when the company has none of the
+    // selected services (meaning "skip this company, nothing to fetch").
     resolveServiceJobsForCompany: function(companyLogin, reportParams) {
         if (!reportParams.selectedServiceNames || reportParams.selectedServiceNames.length === 0) {
             return [{ eventId: null, serviceName: null }];
         }
 
+        var self = this;
         var services = this.companyServices[companyLogin] || [];
         var matched = services.filter(function(service) {
-            return reportParams.selectedServiceNames.indexOf(service.name) !== -1;
+            return reportParams.selectedServiceNames.indexOf(self.normalizeServiceName(service.name)) !== -1;
         });
 
         return matched.map(function(service) {
